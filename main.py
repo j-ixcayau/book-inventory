@@ -1,6 +1,6 @@
+from sqlite3 import IntegrityError
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import relationship
 from sqlalchemy import text
 
 app = Flask(__name__)
@@ -14,7 +14,7 @@ class Genre(db.Model):
     __tablename__ = 'genre'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
-    books = relationship('Book', backref='genre', lazy=True)
+    books = db.relationship('Book', backref='genre', lazy=True)
 
 class Book(db.Model):
     __tablename__ = 'book'
@@ -23,9 +23,8 @@ class Book(db.Model):
     title = db.Column(db.String(255), nullable=False)
     author = db.Column(db.String(255), nullable=False)
     genre_id = db.Column(db.Integer, db.ForeignKey('genre.id'), nullable=False)
-    genre = relationship('Genre')
-    inventory = relationship('Inventory', uselist=False, backref='book')
-    pricing = relationship('Pricing', uselist=False, backref='book')
+    inventory = db.relationship('Inventory', backref='book', uselist=False)
+    pricing = db.relationship('Pricing', backref='book', uselist=False)
 
 class Inventory(db.Model):
     __tablename__ = 'inventory'
@@ -44,7 +43,7 @@ def main():
     return "Welcome to Book Inventory Management", 200
 
 @app.route('/books', methods=['GET'])
-def get_books():
+def getBooks():
     books_info = db.session.execute(text('CALL getBooksInfo()')).fetchall()
     books_list = []
     for book_info in books_info:
@@ -61,37 +60,24 @@ def get_books():
         books_list.append(book_data)
     return jsonify(books_list), 200
 
-@app.route('/books/<int:id>', methods=['GET'])
-def get_book_by_id(id):
-    book = Book.query.get(id)
-    if book is None:
-        return jsonify({"message": "Book not found", "type": "NotFound"}), 404
-
-    book_data = {
-        "id": book.id,
-        "ISBN": book.ISBN,
-        "title": book.title,
-        "author": book.author,
-        "genre": book.genre.name,
-        "quantity": book.inventory.quantity if book.inventory else 0,
-        "price": float(book.pricing.price) if book.pricing else 0.0
-    }
-    return jsonify(book_data), 200
-
 @app.route('/books', methods=['POST'])
-def create_book():
+def createBook():
     data = request.get_json()
-    isbn = data.get('isbn')
+    ISBN = data.get('isbn')
     title = data.get('title')
     author = data.get('author')
     genre_id = data.get('genreId')
 
-    if not isbn or not title or not author or not genre_id:
+    if not ISBN or not title or not author or not genre_id:
         return jsonify({"message": "ISBN, title, author, and genre_id are required"}), 400
 
-    new_book = Book(ISBN=isbn, title=title, author=author, genre_id=genre_id)
-    db.session.add(new_book)
-    db.session.commit()
+    try:
+        new_book = Book(ISBN=ISBN, title=title, author=author, genre_id=genre_id)
+        db.session.add(new_book)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": "An error occurred"}), 500
 
     return jsonify({
         "id": new_book.id,
@@ -104,16 +90,18 @@ def create_book():
     }), 201
 
 @app.route('/books/<int:id>', methods=['PUT'])
-def update_book(id):
+def updateBook(id):
+    data = request.get_json()
     book = Book.query.get(id)
-    if book is None:
+
+    if not book:
         return jsonify({"message": "Book not found", "type": "NotFound"}), 404
 
-    data = request.get_json()
-    book.ISBN = data.get('ISBN', book.ISBN)
+    book.ISBN = data.get('isbn', book.ISBN)
     book.title = data.get('title', book.title)
     book.author = data.get('author', book.author)
-    book.genre_id = data.get('genre_id', book.genre_id)
+    book.genre_id = data.get('genreId', book.genre_id)
+
     db.session.commit()
 
     return jsonify({
@@ -124,42 +112,58 @@ def update_book(id):
         "genre_id": book.genre_id
     }), 200
 
-@app.route('/books/<int:id>/quantity', methods=['PUT'])
-def update_quantity(id):
-    inventory = Inventory.query.filter_by(book_id=id).first()
-    if inventory is None:
+@app.route('/books/<int:id>', methods=['DELETE'])
+def deleteBook(id):
+    # Check if the book exists
+    book = Book.query.get(id)
+    if not book:
         return jsonify({"message": "Book not found", "type": "NotFound"}), 404
 
-    data = request.get_json()
-    inventory.quantity = data.get('quantity', inventory.quantity)
+    # If the book exists, call the stored procedure to delete the book and its dependencies
+    db.session.execute(text('CALL deleteBookAndDependencies(:bookId)'), {'bookId': id})
     db.session.commit()
 
-    return jsonify({"message": "Quantity updated successfully"}), 200
+    return '', 204
 
 @app.route('/books/<int:id>/price', methods=['PUT'])
-def update_price(id):
+def updatePrice(id):
+    price = request.get_json()
+
+    if price is None:
+        return jsonify({"message": "Price is required"}), 400
+
     pricing = Pricing.query.filter_by(book_id=id).first()
-    if pricing is None:
+
+    if not pricing:
         return jsonify({"message": "Book not found", "type": "NotFound"}), 404
 
-    data = request.get_json()
-    pricing.price = data.get('price', pricing.price)
+    pricing.price = price
     db.session.commit()
 
-    return jsonify({"message": "Price updated successfully"}), 200
+    return jsonify({
+        "book_id": pricing.book_id,
+        "price": pricing.price
+    }), 200
 
-@app.route('/books/<int:id>', methods=['DELETE'])
-def delete_book(id):
-    book = Book.query.get(id)
-    if book is None:
+@app.route('/books/<int:id>/quantity', methods=['PUT'])
+def updateQuantity(id):
+    quantity = request.get_json()
+
+    if quantity is None:
+        return jsonify({"message": "Quantity is required"}), 400
+
+    inventory = Inventory.query.filter_by(book_id=id).first()
+
+    if not inventory:
         return jsonify({"message": "Book not found", "type": "NotFound"}), 404
 
-    Inventory.query.filter_by(book_id=id).delete()
-    Pricing.query.filter_by(book_id=id).delete()
-    db.session.delete(book)
+    inventory.quantity = quantity
     db.session.commit()
 
-    return jsonify({"message": "Book deleted successfully"}), 204
+    return jsonify({
+        "book_id": inventory.book_id,
+        "quantity": inventory.quantity
+    }), 200
 
 
 app.run()
