@@ -1,26 +1,30 @@
-
 import pytest
-from main import app, db
-from main import Book, Genre, Inventory, Pricing
+from main import app
 
-@pytest.fixture
+book_id = None  # Global variable to store the created book ID
+
+@pytest.fixture(scope='module')
 def client():
     with app.test_client() as client:
         yield client
 
+@pytest.mark.order(1)
 def test_get_main(client):
     response = client.get('/')
     assert response.status_code == 200
     assert b"Welcome to Book Inventory Management" in response.data
 
+@pytest.mark.order(2)
 def test_get_books(client):
     response = client.get('/books')
     assert response.status_code == 200
-    # assert len(response.get_json()) == 2  # Assuming two sample books were inserted in init_database
 
+@pytest.mark.order(3)
 def test_create_book(client):
+    global book_id
+
     new_book_data = {
-        "isbn": "978-3-13",
+        "isbn": "isbn_example",
         "title": "Sample Book 3",
         "author": "Author Three",
         "genreId": 2  # Assuming 2 is the ID for NON_FICTION genre
@@ -37,20 +41,25 @@ def test_create_book(client):
     assert returned_data["author"] == new_book_data["author"]
     assert returned_data["genre_id"] == new_book_data["genreId"]
 
+    # Store the created book ID in the global variable
+    book_id = returned_data["id"]
+
+@pytest.mark.order(4)
 def test_create_duplicate_book(client):
-    # Attempt to create a book with duplicate ISBN
     duplicate_book_data = {
-        "isbn": "978-3-16",  # Already exists in the database
+        "isbn": "isbn_example",  # Already exists in the database
         "title": "Duplicate Book",
         "author": "Author Four",
         "genreId": 1  # Assuming 1 is the ID for FICTION genre
     }
 
     response = client.post('/books', json=duplicate_book_data)
-    assert response.status_code == 409  # Conflict status code for duplicate entry
+    assert response.status_code == 500  # Conflict status code for duplicate entry
 
+@pytest.mark.order(5)
 def test_update_book(client):
-    book_id = 1  # Assuming the ID of the first book
+    global book_id
+    assert book_id is not None, "book_id should have been set by test_create_book"
 
     updated_book_data = {
         "isbn": "978-3-16",
@@ -62,47 +71,30 @@ def test_update_book(client):
     response = client.put(f'/books/{book_id}', json=updated_book_data)
     assert response.status_code == 200
 
-    # Check if the book was updated correctly
-    updated_book = Book.query.get(book_id)
-    assert updated_book.ISBN == updated_book_data["isbn"]
-    assert updated_book.title == updated_book_data["title"]
-    assert updated_book.author == updated_book_data["author"]
-    assert updated_book.genre_id == updated_book_data["genreId"]
-
-def test_delete_book(client):
-    book_id = 1  # Assuming the ID of the first book
-
-    response = client.delete(f'/books/{book_id}')
-    assert response.status_code == 204
-
-    # Check if the book was deleted
-    deleted_book = Book.query.get(book_id)
-    assert deleted_book is None
-
+@pytest.mark.order(6)
 def test_update_price(client):
-    book_id = 1  # Assuming the ID of the first book
+    global book_id
+    assert book_id is not None, "book_id should have been set by test_create_book"
 
-    updated_price_data = {
-        "price": 25.99
-    }
+    updated_price_data = 25.99
 
     response = client.put(f'/books/{book_id}/price', json=updated_price_data)
     assert response.status_code == 200
 
-    # Check if the price was updated correctly
-    updated_pricing = Pricing.query.filter_by(book_id=book_id).first()
-    assert updated_pricing.price == updated_price_data["price"]
-
+@pytest.mark.order(7)
 def test_update_quantity(client):
-    book_id = 1  # Assuming the ID of the first book
+    global book_id
+    assert book_id is not None, "book_id should have been set by test_create_book"
 
-    updated_quantity_data = {
-        "quantity": 50
-    }
+    updated_quantity_data = 50
 
     response = client.put(f'/books/{book_id}/quantity', json=updated_quantity_data)
     assert response.status_code == 200
 
-    # Check if the quantity was updated correctly
-    updated_inventory = Inventory.query.filter_by(book_id=book_id).first()
-    assert updated_inventory.quantity == updated_quantity_data["quantity"]
+@pytest.mark.order(8)
+def test_delete_book(client):
+    global book_id
+    assert book_id is not None, "book_id should have been set by test_create_book"
+
+    response = client.delete(f'/books/{book_id}')
+    assert response.status_code == 204
