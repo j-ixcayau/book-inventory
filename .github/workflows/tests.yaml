@@ -26,3 +26,6 @@ jobs:
 
             - name: Run
               run: pytest test_main.py
+
+            - name: Success!!!!!!
+              run: python -c "print('Tests Completed')"
