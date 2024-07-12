@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 app = Flask(__name__)
 app.config["DEBUG"] = True
-app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:Abcd123$@localhost/book_inventory_management"
+""" app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:Abcd123$@localhost/book_inventory_management"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -36,13 +36,13 @@ class Pricing(db.Model):
     __tablename__ = 'pricing'
     id = db.Column(db.Integer, primary_key=True)
     book_id = db.Column(db.Integer, db.ForeignKey('book.id'), nullable=False)
-    price = db.Column(db.Numeric(10, 2), nullable=False)
+    price = db.Column(db.Numeric(10, 2), nullable=False) """
 
 @app.route('/', methods=['GET'])
 def main():
     return "Welcome to Book Inventory Management", 200
 
-@app.route('/books', methods=['GET'])
+""" @app.route('/books', methods=['GET'])
 def getBooks():
     books_info = db.session.execute(text('CALL getBooksInfo()')).fetchall()
     books_list = []
@@ -164,7 +164,7 @@ def updateQuantity(id):
         "book_id": inventory.book_id,
         "quantity": inventory.quantity
     }), 200
-
+ """
 
 if __name__ == '__main__':
     app.run(port=5001)
