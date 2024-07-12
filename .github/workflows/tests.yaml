@@ -3,7 +3,7 @@ name: Python Tests
 on:
     push:
         branches:
-            - master
+            - feature/configMySQL
     pull_request:
         branches:
             - master
@@ -12,19 +12,46 @@ jobs:
     build:
         runs-on: ubuntu-latest
 
+        services:
+            mysql:
+                image: mysql:8.0.34
+                ports:
+                    - 3306:3306
+                env:
+                    MYSQL_ROOT_PASSWORD: Abcd123$
+
         steps:
-            - name: Project
+            - name: Checkout repository
               uses: actions/checkout@v4
 
-            - name: Configurar python
+            - name: Wait for MySQL to start
+              run: |
+                  # Wait for MySQL to be available
+                  for i in {30..0}; do
+                      if docker exec ${HOSTNAME} mysqladmin ping -uroot -pAbcd123$ --silent; then
+                          break
+                      fi
+                      echo 'Waiting for MySQL...'
+                      sleep 1
+                  done
+                  if [ "$i" = 0 ]; then
+                      echo 'MySQL did not start within 30 seconds.'
+                      exit 1
+                  fi
+
+            - name: Initialize MySQL database
+              run: |
+                  docker exec -i ${HOSTNAME} mysql -uroot -pAbcd123$ < BookInventory.sql
+
+            - name: Set up Python
               uses: actions/setup-python@v5
               with:
                   python-version: '3.10'
 
-            - name: Instalar dependencies
+            - name: Install dependencies
               run: pip install -r requirements.txt
 
-            - name: Run
+            - name: Run tests
               run: pytest test_main.py
 
             - name: Success!!!!!!
